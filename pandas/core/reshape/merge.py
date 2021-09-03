@@ -8,6 +8,9 @@ import datetime
 from functools import partial
 import hashlib
 import string
+import difflib
+
+
 from typing import (
     TYPE_CHECKING,
     Hashable,
@@ -101,6 +104,8 @@ def merge(
     right_index: bool = False,
     sort: bool = False,
     suffixes: Suffixes = ("_x", "_y"),
+    fuzzy_join: bool = False,
+    threshold: int = 0.6,
     copy: bool = True,
     indicator: bool = False,
     validate: str | None = None,
@@ -116,6 +121,8 @@ def merge(
         right_index=right_index,
         sort=sort,
         suffixes=suffixes,
+        fuzzy_join=fuzzy_join,
+        threshold=threshold,
         copy=copy,
         indicator=indicator,
         validate=validate,
@@ -287,6 +294,53 @@ def merge_ordered(
     9   e       3     b     3.0
     """
 
+def fuzzy_merger(x, y) -> DataFrame:
+        # perform the ordered merge operation
+        op = _OrderedMerge(
+            x,
+            y,
+            on=on,
+            left_on=left_on,
+            right_on=right_on,
+            threshold=threshold,
+            suffixes=suffixes,
+            fill_method=fill_method,
+            how=how,
+        )
+        return op.get_result()
+
+    ##Integrate fuzzy logic with join
+    def fuzzy_merge(df1, df2, left_on, right_on, how='inner', cutoff=0.6):
+        df_other= df2.copy()
+        df_other[left_on] = [get_closest_match(x, df1[left_on], cutoff)
+                             for x in df_other[right_on]]
+        return df1.merge(df_other, on=left_on, how=how)
+
+    def get_closest_match(x, other, cutoff):
+        matches = difflib.get_close_matches(x, other, cutoff=cutoff)
+        return matches[0] if matches else None
+
+    if left_by is not None and right_by is not None:
+        raise ValueError("Can only group either left or right frames")
+    elif left_by is not None:
+        if isinstance(left_by, str):
+            left_by = [left_by]
+        check = set(left_by).difference(left.columns)
+        if len(check) != 0:
+            raise KeyError(f"{check} not found in left columns")
+        result, _ = _groupby_and_merge(left_by, left, right, lambda x, y: _merger(x, y))
+    elif right_by is not None:
+        if isinstance(right_by, str):
+            right_by = [right_by]
+        check = set(right_by).difference(right.columns)
+        if len(check) != 0:
+            raise KeyError(f"{check} not found in right columns")
+        result, _ = _groupby_and_merge(
+            right_by, right, left, lambda x, y: _merger(y, x)
+        )
+    else:
+        result = _merger(left, right)
+    return result
     def _merger(x, y) -> DataFrame:
         # perform the ordered merge operation
         op = _OrderedMerge(
@@ -296,6 +350,7 @@ def merge_ordered(
             left_on=left_on,
             right_on=right_on,
             suffixes=suffixes,
+            thres
             fill_method=fill_method,
             how=how,
         )
@@ -322,6 +377,10 @@ def merge_ordered(
     else:
         result = _merger(left, right)
     return result
+
+
+
+
 
 
 def merge_asof(
